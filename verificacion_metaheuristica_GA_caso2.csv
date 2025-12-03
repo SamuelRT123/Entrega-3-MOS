@@ -1,0 +1,2 @@
+VehicleId,DepotId,InitialLoad,RouteSequence,ClientsServed,DemandsSatisfied,TotalDistance,TotalTime,FuelCost,TotalCost
+V001,cd01,0,cd01-c003-c008-c007-c009-c002-c001-c004-c006-c005-cd01,9,15.0-10.0-12.0-15.0-15.0-12.0-6.0-11.0-5.0,57.310394259708026,1.9103464753236006,29499.77136104971,237294.39022277913
