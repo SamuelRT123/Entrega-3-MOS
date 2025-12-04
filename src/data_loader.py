@@ -6,7 +6,6 @@ import math
 import pandas as pd
 
 
-# Ruta al caso base (ajusta el nombre de la carpeta si es distinto)
 BASE_DEPOT_FOLDER = os.path.abspath(
     os.path.join(os.path.dirname(__file__), "..", "data", "Proyecto_Caso_Base")
 )
@@ -22,7 +21,6 @@ class Depot:
     code: str
     lon: float
     lat: float
-    capacity: float
 
 
 @dataclass
@@ -42,7 +40,6 @@ class Client:
     lat: float
     lon: float
     demand: float
-    max_vehicle_type: str
 
 
 @dataclass
@@ -54,7 +51,7 @@ class MainConfig:
 
     vehicles: Dict[str, Vehicle] = None
     clients: Dict[str, Client] = None
-    depots: Dict[str, Depot] = None
+    depot: Depot = None
 
     distance_km: Dict[Tuple[str, str], float] = None
     time_h: Dict[Tuple[str, str], float] = None
@@ -66,64 +63,72 @@ class MainConfig:
 # =========================
 # Parámetros
 # =========================
-
 def load_parameters_urban(path: str):
     df = pd.read_csv(path)
 
     # Normalizar nombres de columnas
     df.columns = [c.strip().lower() for c in df.columns]
 
-    param_col_candidates = ["parameter", "param", "nombre", "name"]
-    value_col_candidates = ["value", "valor", "val"]
+    param_col = "parameter"
+    value_col = "value"
 
-    param_col = None
-    value_col = None
-
-    for c in param_col_candidates:
-        if c in df.columns:
-            param_col = c
-            break
-
-    for c in value_col_candidates:
-        if c in df.columns:
-            value_col = c
-            break
-
-    if param_col is None or value_col is None:
+    if param_col not in df.columns or value_col not in df.columns:
         raise ValueError(
-            f"No se encontraron columnas de parámetro/valor reconocibles en {path}. "
+            f"El archivo {path} debe tener columnas 'Parameter' y 'Value'. "
             f"Columnas disponibles: {list(df.columns)}"
         )
 
     df[param_col] = df[param_col].astype(str).str.strip()
 
-    def get_val(param_name: str) -> float:
+    def get_val(param_name: str):
+        """Devuelve el valor del parámetro si existe, o None si no."""
         mask = df[param_col].str.lower() == param_name.strip().lower()
         if not mask.any():
-            available = df[param_col].unique().tolist()
-            raise ValueError(
-                f"No se encontró el parámetro '{param_name}' en {path}.\n"
-                f"Parámetros disponibles: {available}"
-            )
+            return None
         return float(df.loc[mask, value_col].iloc[0])
 
-    C_fixed = get_val("C_fixed")
-    C_dist = get_val("C_dist")
-    C_time = get_val("C_time")
+    # --- parámetros económicos ---
     fuel_price = get_val("fuel_price")
+    if fuel_price is None:
+        raise ValueError(
+            f"No se encontró 'fuel_price' en {path}. "
+            f"Parámetros disponibles: {df[param_col].unique().tolist()}"
+        )
 
-    eff_small_min = get_val("fuel_efficiency_van_small_min")
-    eff_small_max = get_val("fuel_efficiency_van_small_max")
-    eff_med_min = get_val("fuel_efficiency_van_medium_min")
-    eff_med_max = get_val("fuel_efficiency_van_medium_max")
-    eff_truck_min = get_val("fuel_efficiency_truck_light_min")
-    eff_truck_max = get_val("fuel_efficiency_truck_light_max")
+    # Si no están definidos en el CSV, por defecto 0 (como pediste)
+    C_fixed = get_val("C_fixed") or 0.0
+    C_dist  = get_val("C_dist") or 0.0
+    C_time  = get_val("C_time") or 0.0
 
-    eff_type = {
-        "small van": 0.5 * (eff_small_min + eff_small_max),
-        "medium van": 0.5 * (eff_med_min + eff_med_max),
-        "light truck": 0.5 * (eff_truck_min + eff_truck_max),
-    }
+    # --- eficiencias de combustible ---
+    eff_type = {}
+
+    # Intentamos primero con los nombres detallados (si existen)
+    eff_small_min  = get_val("fuel_efficiency_van_small_min")
+    eff_small_max  = get_val("fuel_efficiency_van_small_max")
+    eff_med_min    = get_val("fuel_efficiency_van_medium_min")
+    eff_med_max    = get_val("fuel_efficiency_van_medium_max")
+    eff_truck_min  = get_val("fuel_efficiency_truck_light_min")
+    eff_truck_max  = get_val("fuel_efficiency_truck_light_max")
+
+    if all(v is not None for v in [
+        eff_small_min, eff_small_max,
+        eff_med_min, eff_med_max,
+        eff_truck_min, eff_truck_max
+    ]):
+        # Caso "completo" (Casos 2 y 3)
+        eff_type = {
+            "small van": 0.5 * (eff_small_min + eff_small_max),
+            "medium van": 0.5 * (eff_med_min + eff_med_max),
+            "light truck": 0.5 * (eff_truck_min + eff_truck_max),
+        }
+    else:
+        # Caso Base simplificado: usar una sola eficiencia típica
+        eff_typical = get_val("fuel_efficiency_typical")
+        if eff_typical is None:
+            # Último fallback por si acaso
+            eff_typical = 10.0  # km/gal genérico
+        eff_type = {"generic": eff_typical}
 
     return C_fixed, C_dist, C_time, fuel_price, eff_type
 
@@ -134,9 +139,6 @@ def load_parameters_urban(path: str):
 
 def load_vehicles(path: str, eff_type: Dict[str, float], fuel_price: float) -> Dict[str, Vehicle]:
     df = pd.read_csv(path)
-
-    if "StandardizedID" not in df.columns:
-        raise ValueError(f"El archivo {path} no tiene columna 'StandardizedID'. Columnas: {list(df.columns)}")
 
     df["StandardizedID"] = df["StandardizedID"].astype(str).str.strip()
 
@@ -175,11 +177,6 @@ def load_vehicles(path: str, eff_type: Dict[str, float], fuel_price: float) -> D
 def load_clients(path: str) -> Dict[str, Client]:
     df = pd.read_csv(path)
 
-    if "StandardizedID" not in df.columns:
-        raise ValueError(
-            f"El archivo {path} no tiene columna 'StandardizedID'. "
-            f"Columnas disponibles: {list(df.columns)}"
-        )
 
     df["StandardizedID"] = df["StandardizedID"].astype(str).str.strip().str.lower()
 
@@ -200,18 +197,12 @@ def load_clients(path: str) -> Dict[str, Client]:
         lon = float(row["Longitude"])
         demand = float(row["Demand"])
 
-        if has_vehicle_restr:
-            max_vehicle_type = str(row["VehicleSizeRestriction"])
-        else:
-            max_vehicle_type = "any"
-
         clients[code] = Client(
             numeric_id=numeric_id,
             code=code,
             lat=lat,
             lon=lon,
-            demand=demand,
-            max_vehicle_type=max_vehicle_type,
+            demand=demand
         )
 
     return clients
@@ -223,37 +214,18 @@ def load_clients(path: str) -> Dict[str, Client]:
 
 def load_depots(path: str) -> Dict[str, Depot]:
     df = pd.read_csv(path)
+    row = df.iloc[0]
 
-    df.columns = [c.strip() for c in df.columns]
+    numeric_id =int(row["DepotID"])
+    code = str(row["StandardizedID"]).strip().lower()
+    lat = float(row["Latitude"])
+    lon = float(row["Longitude"])
 
-    required = ["DepotID", "StandardizedID", "Latitude", "Longitude"]
-    missing = [c for c in required if c not in df.columns]
-    if missing:
-        raise ValueError(
-            f"El archivo {path} no tiene las columnas requeridas {required}. "
-            f"Columnas disponibles: {list(df.columns)}"
-        )
-
-    has_capacity = "Capacity" in df.columns
-
-    depots: Dict[str, Depot] = {}
-    for _, row in df.iterrows():
-        numeric_id = int(row["DepotID"])
-        code = str(row["StandardizedID"]).strip().lower()
-        lat = float(row["Latitude"])
-        lon = float(row["Longitude"])
-
-        if has_capacity:
-            capacity = float(row["Capacity"])
-        else:
-            capacity = 1e9  # dummy, no se usa
-
-        depots[code] = Depot(
+    depots = Depot(
             numeric_id=numeric_id,
             code=code,
             lat=lat,
-            lon=lon,
-            capacity=capacity,
+            lon=lon
         )
 
     return depots
@@ -276,7 +248,8 @@ def haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     return R * c
 
 
-def build_distance_and_time(config: MainConfig, avg_speed_kmh: float = 30.0):
+def build_distance_and_time(config: MainConfig, avg_speed_kmh: float = 45.0):
+    #Camaras de velocidad: 50km/h en zonas urbanas -> 45.0 km/h promedio considerando paradas
     distance_km: Dict[Tuple[str, str], float] = {}
     time_h: Dict[Tuple[str, str], float] = {}
 
@@ -285,8 +258,8 @@ def build_distance_and_time(config: MainConfig, avg_speed_kmh: float = 30.0):
     for code, c in config.clients.items():
         nodes_coords[code] = (c.lat, c.lon)
 
-    for code, d in config.depots.items():
-        nodes_coords[code] = (d.lat, d.lon)
+    depot= config.depot
+    nodes_coords[config.depot.code] = (depot.lat, depot.lon)
 
     codes = list(nodes_coords.keys())
 
@@ -326,7 +299,7 @@ def load_instance(folder_path: str) -> MainConfig:
             f"No se encontró depots.csv en la ruta de caso base: {depots_path}"
         )
 
-    depots = load_depots(depots_path)
+    depot = load_depots(depots_path)
 
     config = MainConfig(
         C_fixed=C_fixed,
@@ -335,7 +308,7 @@ def load_instance(folder_path: str) -> MainConfig:
         fuel_price=fuel_price,
         vehicles=vehicles,
         clients=clients,
-        depots=depots,
+        depot=depot,
     )
 
     build_distance_and_time(config)

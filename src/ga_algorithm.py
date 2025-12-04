@@ -1,5 +1,3 @@
-# ga_algorithm.py
-
 import random
 from representation import CVRPSolution
 from evaluation import evaluate_solution
@@ -7,7 +5,9 @@ from data_loader import MainConfig
 from operators import crossover, mutate, repair
 
 
+
 class GeneticAlgorithm:
+    
     def __init__(self, config: MainConfig, pop_size=30, generations=200):
         self.config = config
         self.pop_size = pop_size
@@ -15,7 +15,7 @@ class GeneticAlgorithm:
         self.population = []
 
         # ÚNICO depósito (por enunciado)
-        self.depot_code = next(iter(self.config.depots.keys()))
+        self.depot_code = config.depot.code
 
     def create_individual(self) -> CVRPSolution:
         """

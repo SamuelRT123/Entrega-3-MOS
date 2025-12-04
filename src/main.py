@@ -7,7 +7,7 @@ from verification import export_verification
 if __name__ == "__main__":
     # Cambia esta ruta para correr Caso Base / Caso 2 / Caso 3
     # ejemplo: "./data/Proyecto_Caso_Base"
-    instance_path = "./data/Proyecto_Caso_3"
+    instance_path = "./data/Proyecto_Caso_2"
 
     config = load_instance(instance_path)
 
@@ -26,3 +26,6 @@ if __name__ == "__main__":
         "verificacion_metaheuristica_GA_caso2.csv"
     )
     print("Archivo de verificación generado.")
+
+# TODO: Lo que toca cambiar
+# Notebook
