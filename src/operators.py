@@ -141,7 +141,7 @@ def mutate(
 def repair(
     solution: CVRPSolution,
     config: MainConfig,
-    depot_code: str,   # <- se acepta, aunque no lo usemos
+    depot_code: str,
 ) -> CVRPSolution:
     """
     Repara/evalúa la solución. En este diseño, la factibilidad de capacidad
